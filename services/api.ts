@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Recommendation } from '../types';
 
-const API_BASE_URL = 'http://localhost:8001';
+const API_BASE_URL = 'http://localhost:8000';
 
 export const getRecommendations = async (mood: string): Promise<Recommendation> => {
     try {
