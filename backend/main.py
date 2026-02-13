@@ -3,10 +3,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-from backend.services import analyze_mood, fetch_movies
+from services import analyze_mood, fetch_movies
+import logging
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv("../.env")
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="CinéMood API")
 
@@ -23,12 +28,12 @@ class MoodRequest(BaseModel):
     mood: str
 
 class Movie(BaseModel):
-    id: int
-    title: str
-    overview: str
-    poster_path: Optional[str]
-    vote_average: float
-    release_date: Optional[str]
+    id: Optional[int] = None
+    title: Optional[str] = "Unknown Title"
+    overview: Optional[str] = ""
+    poster_path: Optional[str] = None
+    vote_average: Optional[float] = 0.0
+    release_date: Optional[str] = None
 
 class RecommendationResponse(BaseModel):
     mood: str
@@ -54,6 +59,7 @@ async def get_recommendations(request: MoodRequest):
             "movies": movies
         }
     except Exception as e:
+        logger.error(f"Error in recommendation endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

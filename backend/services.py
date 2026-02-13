@@ -3,9 +3,12 @@ import httpx
 import google.generativeai as genai
 from typing import List
 import json
+import logging
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv("../.env")
+
+logger = logging.getLogger(__name__)
 
 # Configuration
 GEMINI_API_KEY = os.getenv("API_KEY")
@@ -14,14 +17,14 @@ TMDB_BASE_URL = "https://api.themoviedb.org/3"
 
 # Initialize Gemini
 if GEMINI_API_KEY:
-    genai.configure(apiKey=GEMINI_API_KEY)
+    genai.configure(api_key=GEMINI_API_KEY)
 
 async def analyze_mood(mood: str) -> List[int]:
     """
     Uses Gemini AI to convert a mood/situation description into TMDB genre IDs.
     """
-    if not GEMINI_API_KEY:
-        # Fallback to some default genres if API key is missing
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY":
+        logger.warning("Gemini API Key is missing or default placeholder. Using fallback.")
         return [28, 12] # Action, Adventure
 
     try:
@@ -38,28 +41,37 @@ async def analyze_mood(mood: str) -> List[int]:
         Example: [28, 53]
         """
         
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+        response = await model.generate_content_async(prompt)
         
+        # Check if response has text (could be blocked by safety filters)
+        try:
+            text = response.text.strip()
+        except Exception as safety_err:
+            logger.error(f"Gemini response has no text (safety or other issue): {safety_err}")
+            return [18]
+
         # Extract JSON array if there's any surrounding text
         if "[" in text and "]" in text:
             text = text[text.find("["):text.rfind("]")+1]
         
-        genre_ids = json.loads(text)
-        return genre_ids if isinstance(genre_ids, list) else [18]
+        try:
+            genre_ids = json.loads(text)
+            return genre_ids if isinstance(genre_ids, list) else [18]
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse Gemini response as JSON: {text}")
+            return [18]
     except Exception as e:
-        print(f"Error analyzing mood: {e}")
+        logger.error(f"Error analyzing mood with Gemini: {e}")
         return [18] # Fallback to Drama
 
 async def fetch_movies(genre_ids: List[int]) -> List[dict]:
     """
     Fetches movies from TMDB based on genre IDs.
     """
-    if not TMDB_API_KEY:
-        # Placeholder key from the frontend for testing if env is missing
+    # Use fallback test key if env is missing or placeholder
+    tmdb_key = TMDB_API_KEY
+    if not tmdb_key or tmdb_key == "8309e3966563600f723927d2c0b46761": # Keep the test key as fallback
         tmdb_key = "8309e3966563600f723927d2c0b46761"
-    else:
-        tmdb_key = TMDB_API_KEY
 
     genre_string = ",".join(map(str, genre_ids))
     
@@ -73,11 +85,12 @@ async def fetch_movies(genre_ids: List[int]) -> List[dict]:
                     "sort_by": "popularity.desc",
                     "vote_count.gte": 100,
                     "page": 1
-                }
+                },
+                timeout=10.0
             )
             response.raise_for_status()
             data = response.json()
             return data.get("results", [])
         except Exception as e:
-            print(f"Error fetching movies: {e}")
+            logger.error(f"Error fetching movies from TMDB: {e}")
             return []
